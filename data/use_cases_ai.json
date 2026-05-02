@@ -1,0 +1,112 @@
+[
+  {
+    "title": "Automatisation des emails entrants",
+    "sectors": ["tous", "services", "commerce"],
+    "description": "Classement, réponses types et escalade des demandes clients reçues par email.",
+    "typical_tasks": ["trier boîte mail", "réponses FAQ", "relances"],
+    "potential_gain": "2 à 5 h / semaine",
+    "difficulty": "faible",
+    "roi_speed": "rapide (1–2 mois)",
+    "required_data": "Historique emails, modèles de réponses",
+    "example_tool": "Zendesk AI, Outlook + règles, GPT intégré"
+  },
+  {
+    "title": "Assistant CRM intelligent",
+    "sectors": ["tous", "B2B", "industrie"],
+    "description": "Saisie assistée, suggestions de prochaines actions et rappels contextuels sur les opportunités.",
+    "typical_tasks": ["mise à jour fiches", "suivi relances", "devis"],
+    "potential_gain": "3 à 6 h / semaine",
+    "difficulty": "moyenne",
+    "roi_speed": "moyen (3–6 mois)",
+    "required_data": "Données CRM, pipeline ventes",
+    "example_tool": "HubSpot AI, Salesforce Einstein, Pipedrive"
+  },
+  {
+    "title": "Résumé automatique de réunions",
+    "sectors": ["tous", "services", "tech"],
+    "description": "Transcription et synthèse des décisions, actions et responsables après réunions.",
+    "typical_tasks": ["compte-rendu", "suivi actions", "visioconférence"],
+    "potential_gain": "1 à 3 h / semaine",
+    "difficulty": "faible",
+    "roi_speed": "rapide",
+    "required_data": "Enregistrements ou notes",
+    "example_tool": "Otter, Fireflies, Teams Copilot"
+  },
+  {
+    "title": "Génération de contenus marketing",
+    "sectors": ["commerce", "services", "e-commerce"],
+    "description": "Brouillons posts, newsletters et fiches produit à partir de briefs structurés.",
+    "typical_tasks": ["rédaction réseaux sociaux", "newsletter", "fiches produit"],
+    "potential_gain": "2 à 4 h / semaine",
+    "difficulty": "faible",
+    "roi_speed": "rapide",
+    "required_data": "Charte graphique, tonalité, catalogue",
+    "example_tool": "Canva AI, ChatGPT, Jasper"
+  },
+  {
+    "title": "Analyse de devis et factures",
+    "sectors": ["tous", "BTP", "industrie", "services"],
+    "description": "Extraction des montants, délais et écarts pour accélérer la validation administrative.",
+    "typical_tasks": ["saisie comptable", "contrôle devis", "archivage PDF"],
+    "potential_gain": "4 à 8 h / semaine",
+    "difficulty": "moyenne",
+    "roi_speed": "moyen",
+    "required_data": "PDF structurés ou semi-structurés",
+    "example_tool": "OCR + LLM, outils compta intégrés"
+  },
+  {
+    "title": "Veille concurrentielle assistée",
+    "sectors": ["commerce", "services", "industrie"],
+    "description": "Agrégation d'articles, alertes prix et synthèses hebdomadaires sur les concurrents.",
+    "typical_tasks": ["veille web", "veille prix", "synthèse marché"],
+    "potential_gain": "2 à 5 h / semaine",
+    "difficulty": "moyenne",
+    "roi_speed": "moyen",
+    "required_data": "Sources web, liste concurrents",
+    "example_tool": "Perplexity, flux RSS + LLM"
+  },
+  {
+    "title": "Chatbot support client",
+    "sectors": ["e-commerce", "services", "commerce"],
+    "description": "Réponses 24/7 sur livraisons, SAV et FAQ avec transfert humain si besoin.",
+    "typical_tasks": ["questions clients répétitives", "SAV niveau 1"],
+    "potential_gain": "5 à 15 h / semaine",
+    "difficulty": "élevée",
+    "roi_speed": "long (6+ mois)",
+    "required_data": "Base FAQ, politiques SAV",
+    "example_tool": "Intercom, Crisp, bot custom RAG"
+  },
+  {
+    "title": "Prévision de ventes simplifiée",
+    "sectors": ["B2B", "commerce", "industrie"],
+    "description": "Projection courte échéance à partir de l'historique et des pipelines.",
+    "typical_tasks": ["tableaux Excel ventes", "reporting direction"],
+    "potential_gain": "2 à 4 h / semaine",
+    "difficulty": "moyenne",
+    "roi_speed": "moyen",
+    "required_data": "Historique ventes, pipeline",
+    "example_tool": "Excel + modèle, outils BI légers"
+  },
+  {
+    "title": "Extraction d'informations depuis PDF",
+    "sectors": ["tous", "BTP", "services"],
+    "description": "Structuration de données contractuelles ou techniques à partir de documents PDF.",
+    "typical_tasks": ["relecture contrats", "copier-coller données PDF"],
+    "potential_gain": "3 à 7 h / semaine",
+    "difficulty": "moyenne",
+    "roi_speed": "moyen",
+    "required_data": "Modèles de documents types",
+    "example_tool": "LlamaParse, Azure Document Intelligence"
+  },
+  {
+    "title": "Reporting automatisé",
+    "sectors": ["tous", "services", "industrie"],
+    "description": "Génération de rapports périodiques (KPI, trésorerie, RH) à partir de sources multiples.",
+    "typical_tasks": ["rapports mensuels", "slides direction", "exports Excel"],
+    "potential_gain": "3 à 6 h / semaine",
+    "difficulty": "faible à moyenne",
+    "roi_speed": "rapide à moyen",
+    "required_data": "Exports ERP/Excel, définitions KPI",
+    "example_tool": "Power BI + Copilot, scripts Python + LLM"
+  }
+]
