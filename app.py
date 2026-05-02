@@ -5,11 +5,17 @@ Lancement : streamlit run app.py
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
 import streamlit as st
 
 from src.agent import run_diagnostic
 from src.config import get_settings
-from src.report import build_report_markdown, generate_markdown_report
+from src.report import build_report_markdown, generate_markdown_report, generate_pdf_report
 
 st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide")
 
@@ -103,18 +109,72 @@ if "last_result" in st.session_state:
             st.markdown(f"**Prochaines étapes** : {rec.get('next_steps', '—')}")
 
     st.divider()
-    st.subheader("Rapport Markdown")
+    st.subheader("Rapport — Markdown et PDF")
     md = build_report_markdown(company, res.get("recommendations", []))
     st.markdown(md)
-    c_dl, c_save = st.columns(2)
-    with c_dl:
+
+    sig = hashlib.sha256(md.encode("utf-8")).hexdigest()
+    if st.session_state.get("_report_sig") != sig:
+        st.session_state["_report_sig"] = sig
+        st.session_state["_report_pdf_bytes"] = None
+        st.session_state["_report_pdf_error"] = None
+        try:
+            fd, tmp_pdf = tempfile.mkstemp(suffix=".pdf")
+            os.close(fd)
+            try:
+                generate_pdf_report(md, tmp_pdf)
+                st.session_state["_report_pdf_bytes"] = Path(tmp_pdf).read_bytes()
+            finally:
+                try:
+                    os.unlink(tmp_pdf)
+                except OSError:
+                    pass
+        except Exception as exc:  # noqa: BLE001 — affichage utilisateur
+            st.session_state["_report_pdf_error"] = str(exc)
+
+    pdf_bytes = st.session_state.get("_report_pdf_bytes")
+    pdf_err = st.session_state.get("_report_pdf_error")
+
+    if pdf_err:
+        st.error(f"Export PDF impossible : {pdf_err}")
+
+    c_md, c_pdf, c_save = st.columns(3)
+    with c_md:
         st.download_button(
             label="Télécharger le rapport (.md)",
             data=md.encode("utf-8"),
             file_name="rapport_diagnostic_ia.md",
             mime="text/markdown",
+            key="dl_md_report",
         )
+    with c_pdf:
+        if pdf_bytes:
+            st.download_button(
+                label="Télécharger le rapport (.pdf)",
+                data=pdf_bytes,
+                file_name="rapport_diagnostic_ia.pdf",
+                mime="application/pdf",
+                key="dl_pdf_report",
+            )
+        else:
+            st.caption("PDF non disponible (voir message d’erreur ci-dessus).")
     with c_save:
-        if st.button("Enregistrer dans outputs/"):
+        if st.button("Enregistrer Markdown dans outputs/", key="save_md_outputs"):
             path = generate_markdown_report(company, res.get("recommendations", []))
             st.success(f"Fichier créé : `{path}`")
+        if st.button(
+            "Enregistrer PDF dans outputs/",
+            key="save_pdf_outputs",
+            disabled=not pdf_bytes,
+        ):
+            out_dir = Path(__file__).resolve().parent / "outputs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            name = company.get("entreprise") or company.get("company_name") or "entreprise"
+            safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(name))[:50]
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            pdf_path = out_dir / f"diagnostic_{safe}_{ts}.pdf"
+            try:
+                generate_pdf_report(md, str(pdf_path))
+                st.success(f"PDF créé : `{pdf_path}`")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Échec enregistrement PDF : {exc}")
