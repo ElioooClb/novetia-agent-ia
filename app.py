@@ -13,11 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import requests
 import streamlit as st
 
 from src.agent import run_diagnostic
 from src.config import get_settings
+from src.llm_provider import _ollama_post_json
 from src.report import build_report_markdown, generate_pdf_report
 
 # TODO: réactiver l'envoi email après configuration SMTP ou API email (voir src/email_report.py).
@@ -153,9 +153,8 @@ def render_admin_panel() -> None:
 
 
 # --- Navigation & chat Ollama local ------------------------------------------
-# Le chat utilise uniquement HTTP vers Ollama (pas d’API cloud ni clés secrètes).
-_DEFAULT_OLLAMA_CHAT_URL = "http://localhost:11434"
-_DEFAULT_OLLAMA_CHAT_MODEL = "llama3.2:3b"
+# Le chat utilise la même config Ollama que le projet (get_settings → OLLAMA_*),
+# via _ollama_post_json (src/llm_provider.py) pour l’appel /api/chat (pas d’API cloud ni clés).
 
 
 def init_navigation() -> None:
@@ -168,63 +167,98 @@ def init_chat_history() -> None:
         st.session_state.chat_history = []
 
 
-def ollama_chat_config() -> tuple[str, str]:
-    """URL et modèle pour la vue conversationnelle (OLLAMA_BASE_URL / OLLAMA_MODEL)."""
-    base = os.getenv("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_CHAT_URL).rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", _DEFAULT_OLLAMA_CHAT_MODEL)
-    return base, model
+def detect_diagnostic_intent(user_message: str) -> bool:
+    """
+    Détecte une demande d’ouverture du parcours « Diagnostic IA » (sans appel LLM).
+    Règles simples : texte en minuscules + sous-chaînes / combinaisons de mots-clés.
+    """
+    t = user_message.strip().lower()
+    if not t:
+        return False
+    t = t.replace("’", "'")
+
+    phrases = (
+        "je veux faire un diagnostic",
+        "faire un diagnostic ia",
+        "faire un diagnostic",
+        "lance le diagnostic",
+        "lance diagnostic",
+        "lancer le diagnostic",
+        "lancer diagnostic",
+        "ouvre le diagnostic",
+        "ouvre diagnostic",
+        "ouvrir le diagnostic",
+        "va sur diagnostic",
+        "va au diagnostic",
+        "aller au diagnostic",
+        "passer au diagnostic",
+        "diagnostic ia de l'entreprise",
+        "diagnostic ia",
+        "audit ia",
+        "analyse mon entreprise",
+        "diagnostic de mon entreprise",
+        "diagnostic de l'entreprise",
+        "diagnostic entreprise",
+    )
+    if any(p in t for p in phrases):
+        return True
+    if "diagnostic" in t and any(
+        x in t
+        for x in (
+            "lance",
+            "lancer",
+            "ouvre",
+            "ouvrir",
+            "va sur",
+            "va au",
+            "aller",
+            "passer",
+            "ouvre-moi",
+        )
+    ):
+        return True
+    if "diagnostic" in t and "entreprise" in t:
+        return True
+    return False
 
 
 def call_ollama_chat(history: list[dict[str, str]]) -> str:
-    """
-    Appelle Ollama /api/chat avec la liste messages {'role','content'} (user | assistant).
-    Ne passe pas par le routeur LLM du diagnostic ; aucune clé API externe.
-    """
-    base, model = ollama_chat_config()
-    url = f"{base}/api/chat"
-    payload = {"model": model, "messages": history, "stream": False}
+    """Appelle Ollama /api/chat avec get_settings() (OLLAMA_BASE_URL, OLLAMA_MODEL)."""
     try:
-        r = requests.post(url, json=payload, timeout=120)
-        r.raise_for_status()
-    except requests.exceptions.HTTPError as exc:
-        snippet = ""
-        if exc.response is not None:
-            snippet = (exc.response.text or "")[:160]
-        code = exc.response.status_code if exc.response else "?"
-        raise RuntimeError(
-            f"Ollama a répondu avec une erreur HTTP ({code}). "
-            f"Vérifiez que le modèle « {model} » est disponible (`ollama pull {model}`). {snippet}"
-        ) from exc
-    except requests.exceptions.ConnectionError as exc:
-        raise RuntimeError(
-            f"Impossible de joindre Ollama sur {base}. Vérifiez que le service tourne "
-            "et que OLLAMA_BASE_URL est correct."
-        ) from exc
-    except requests.exceptions.Timeout as exc:
-        raise RuntimeError("Le modèle local met trop longtemps à répondre. Réessayez.") from exc
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"Erreur lors de l’appel à Ollama : {exc}") from exc
-
-    try:
-        data = r.json()
+        cfg = get_settings()
     except ValueError as exc:
-        raise RuntimeError("Réponse invalide (pas du JSON). Vérifiez OLLAMA_BASE_URL.") from exc
+        raise RuntimeError(str(exc)) from exc
+    url = f"{cfg.ollama_base_url.rstrip('/')}/api/chat"
+    payload: dict[str, Any] = {
+        "model": cfg.ollama_model,
+        "messages": history,
+        "stream": False,
+    }
+    data = _ollama_post_json(url, payload, cfg.ollama_model)
     msg = data.get("message") or {}
     content = msg.get("content")
-    if content is None or content == "":
+    if content is None or str(content).strip() == "":
         raise RuntimeError(
-            f"Réponse vide ou inattendue. Essayez `ollama pull {model}` si le modèle est absent."
+            f"Réponse vide depuis Ollama (chat). Essayez : ollama pull {cfg.ollama_model}"
         )
     return str(content)
 
 
 def render_chat_page() -> None:
     init_chat_history()
-    base, chat_model = ollama_chat_config()
+    cfg_ok = None
+    try:
+        cfg_ok = get_settings()
+    except ValueError as exc:
+        st.error(str(exc))
 
     st.markdown("# Assistant IA local")
     st.caption("Discutez avec le modèle local avant de lancer un diagnostic structuré.")
-    st.caption(f"Connexion **Ollama** · modèle `{chat_model}` · `{base}`")
+    if cfg_ok is not None:
+        st.caption(
+            f"**Ollama** (chat) : `{cfg_ok.ollama_model}` @ `{cfg_ok.ollama_base_url}` · "
+            f"fournisseur **diagnostic** configuré : **{cfg_ok.llm_provider}**"
+        )
 
     if err_chat := st.session_state.pop("_chat_error", None):
         with st.container():
@@ -236,6 +270,15 @@ def render_chat_page() -> None:
 
     if prompt := st.chat_input("Votre message"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
+        if detect_diagnostic_intent(prompt):
+            st.session_state.chat_history.append(
+                {
+                    "role": "assistant",
+                    "content": "Bien sûr, je t’ouvre le diagnostic IA de l’entreprise.",
+                }
+            )
+            st.session_state.current_page = "diagnostic"
+            st.rerun()
         try:
             with st.spinner("Réponse du modèle local…"):
                 reply = call_ollama_chat(st.session_state.chat_history)
@@ -251,6 +294,25 @@ def render_chat_page() -> None:
 def render_diagnostic_page() -> None:
     st.markdown("# Diagnostic IA TPE/PME")
     st.caption("Démo — scoring déterministe et enrichissement LLM.")
+    try:
+        cfg = get_settings()
+        if cfg.llm_provider == "openai":
+            st.caption(
+                f"**LLM diagnostic** : OpenAI (`{cfg.openai_model}`). "
+                "Les résultats indiquent si l’appel a réussi ou si le **repli scoring** s’applique."
+            )
+        elif cfg.llm_provider == "mistral":
+            st.caption(
+                f"**LLM diagnostic** : Mistral (`{cfg.mistral_model}`). "
+                "Les résultats indiquent si l’appel a réussi ou si le **repli scoring** s’applique."
+            )
+        else:
+            st.caption(
+                f"**LLM diagnostic** : Ollama local (`{cfg.ollama_model}` @ `{cfg.ollama_base_url}`). "
+                "Les résultats indiquent si l’appel a réussi ou si le **repli scoring** s’applique."
+            )
+    except ValueError as exc:
+        st.error(str(exc))
 
     if st.session_state.pop("_toast_diagnostic_reloaded", False):
         st.success("Diagnostic rechargé")
@@ -359,6 +421,25 @@ def save_diagnostic_to_history(company: dict[str, Any], result: dict[str, Any]) 
     }
 
 
+def inject_hide_sidebar_when_logged_out() -> None:
+    """
+    Masque la sidebar Streamlit et le bouton d'ouverture tant que l'utilisateur n'est pas
+    authentifié (écran de connexion épuré, tous appareils).
+    """
+    if st.session_state.get("is_authenticated"):
+        return
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"],
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="collapsedControl"] { display: none !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def inject_minimal_styles() -> None:
     st.markdown(
         """
@@ -392,15 +473,22 @@ def render_llm_sidebar_compact() -> None:
     with st.expander("Configuration LLM", expanded=False):
         try:
             cfg = get_settings()
-            st.caption(f"Fournisseur : **{cfg.llm_provider}**")
-            if cfg.llm_provider == "openai":
-                st.caption(f"Modèle : {cfg.openai_model}")
-            elif cfg.llm_provider == "mistral":
-                st.caption(f"Modèle : {cfg.mistral_model}")
-            else:
-                st.caption(f"Ollama : {cfg.ollama_model} @ {cfg.ollama_base_url}")
-        except Exception as e:  # noqa: BLE001
-            st.warning(str(e))
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        prov = cfg.llm_provider
+        if prov == "openai":
+            st.caption("**Diagnostic** : OpenAI (API externe)")
+            st.caption(f"Modèle : `{cfg.openai_model}`")
+        elif prov == "mistral":
+            st.caption("**Diagnostic** : Mistral (API externe)")
+            st.caption(f"Modèle : `{cfg.mistral_model}`")
+        else:
+            st.caption("**Diagnostic** : Ollama **local**")
+            st.caption(f"Modèle : `{cfg.ollama_model}` @ `{cfg.ollama_base_url}`")
+        st.caption(
+            "**Assistant IA local (chat)** : utilise les mêmes `OLLAMA_BASE_URL` et `OLLAMA_MODEL`."
+        )
 
 
 def render_history_sidebar() -> None:
@@ -411,7 +499,6 @@ def render_history_sidebar() -> None:
     st.markdown("### Historique")
     if not history:
         st.caption("Aucun diagnostic dans l'historique")
-        render_llm_sidebar_compact()
         return
 
     ld = st.session_state.get("loaded_diagnostic")
@@ -450,7 +537,6 @@ def render_history_sidebar() -> None:
         st.rerun()
 
     st.divider()
-    render_llm_sidebar_compact()
 
 
 def render_diagnostic_form() -> tuple[bool, dict[str, Any] | None]:
@@ -641,23 +727,22 @@ def render_footer_signature() -> None:
     )
 
 
-st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide", initial_sidebar_state="expanded")
-inject_minimal_styles()
+st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide", initial_sidebar_state="collapsed")
 init_auth()
 init_history()
 init_navigation()
 init_chat_history()
 
+inject_minimal_styles()
 if not st.session_state.is_authenticated:
-    with st.sidebar:
-        st.markdown("### NovetIA")
-        st.caption("Connexion requise.")
+    inject_hide_sidebar_when_logged_out()
     render_login_screen()
     st.stop()
 
 with st.sidebar:
     render_user_sidebar()
     render_navigation_sidebar()
+    render_llm_sidebar_compact()
     if st.session_state.current_page == "diagnostic":
         render_history_sidebar()
         render_admin_panel()
