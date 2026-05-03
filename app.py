@@ -33,6 +33,14 @@ DEMO_USERS: dict[str, dict[str, str]] = {
     "admin@demo.fr": {"password": "admin123", "role": "admin"},
 }
 
+import streamlit as st
+
+st.set_page_config(
+    page_title="Agent IA NovetIA",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 def init_auth() -> None:
     if "is_authenticated" not in st.session_state:
@@ -359,6 +367,36 @@ def save_diagnostic_to_history(company: dict[str, Any], result: dict[str, Any]) 
     }
 
 
+def inject_hide_sidebar_when_logged_out() -> None:
+    """
+    Masque entièrement la sidebar Streamlit et le contrôle « menu » tant que l’utilisateur
+    n’est pas connecté (st.session_state.is_authenticated est faux).
+
+    Pourquoi : sur l’écran de connexion, Streamlit affiche quand même le rail latéral et le
+    bouton hamburger, ce qui prête à confusion et peu professionnel. Le CSS s’applique à
+    tous les viewports (desktop, tablette, mobile) ; après connexion, cette feuille n’est
+    pas injectée, la sidebar redevient visible normalement.
+    """
+    if st.session_state.get("is_authenticated"):
+        return
+    st.markdown(
+        """
+        <style>
+        /* Panneau latéral Streamlit */
+        section[data-testid="stSidebar"],
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+        /* Bouton pour ouvrir la sidebar lorsqu’elle est repliée (icône « hamburger ») */
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def inject_minimal_styles() -> None:
     st.markdown(
         """
@@ -641,17 +679,15 @@ def render_footer_signature() -> None:
     )
 
 
-st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide", initial_sidebar_state="expanded")
-inject_minimal_styles()
+st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide", initial_sidebar_state="collapsed")
 init_auth()
 init_history()
 init_navigation()
 init_chat_history()
 
+inject_minimal_styles()
 if not st.session_state.is_authenticated:
-    with st.sidebar:
-        st.markdown("### NovetIA")
-        st.caption("Connexion requise.")
+    inject_hide_sidebar_when_logged_out()
     render_login_screen()
     st.stop()
 
