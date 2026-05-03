@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
 import streamlit as st
 
 from src.agent import run_diagnostic
@@ -58,6 +59,8 @@ def logout() -> None:
     st.session_state.current_role = None
     st.session_state.history = []
     st.session_state.loaded_diagnostic = None
+    st.session_state.chat_history = []
+    st.session_state.current_page = "chat"
     for k in ("_report_sig", "_report_pdf_bytes", "_report_pdf_error"):
         st.session_state.pop(k, None)
 
@@ -77,6 +80,8 @@ def render_login_screen() -> None:
             st.session_state.is_authenticated = True
             st.session_state.current_user = email_in.strip().lower()
             st.session_state.current_role = role
+            st.session_state.current_page = "chat"
+            st.session_state.chat_history = []
             st.rerun()
         else:
             st.error("Email ou mot de passe incorrect.")
@@ -97,6 +102,29 @@ def render_user_sidebar() -> None:
     st.caption(f"Rôle : {role_display}")
     if st.button("Se déconnecter", use_container_width=True):
         logout()
+        st.rerun()
+    st.divider()
+
+
+def render_navigation_sidebar() -> None:
+    """Bascule entre la vue chat locale et le diagnostic métier."""
+    st.markdown("### Navigation")
+    page = st.session_state.get("current_page", "chat")
+    if st.button(
+        "Assistant IA local",
+        use_container_width=True,
+        type="primary" if page == "chat" else "secondary",
+        key="nav_sidebar_chat",
+    ):
+        st.session_state.current_page = "chat"
+        st.rerun()
+    if st.button(
+        "Diagnostic IA de l'entreprise",
+        use_container_width=True,
+        type="primary" if page == "diagnostic" else "secondary",
+        key="nav_sidebar_diagnostic",
+    ):
+        st.session_state.current_page = "diagnostic"
         st.rerun()
     st.divider()
 
@@ -122,6 +150,141 @@ def render_admin_panel() -> None:
             st.caption(f"Score moyen (indice interne) : **{avg:.1f}**")
         else:
             st.caption("Score moyen (indice interne) : —")
+
+
+# --- Navigation & chat Ollama local ------------------------------------------
+# Le chat utilise uniquement HTTP vers Ollama (pas d’API cloud ni clés secrètes).
+_DEFAULT_OLLAMA_CHAT_URL = "http://localhost:11434"
+_DEFAULT_OLLAMA_CHAT_MODEL = "llama3.2:3b"
+
+
+def init_navigation() -> None:
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "chat"
+
+
+def init_chat_history() -> None:
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+
+def ollama_chat_config() -> tuple[str, str]:
+    """URL et modèle pour la vue conversationnelle (OLLAMA_BASE_URL / OLLAMA_MODEL)."""
+    base = os.getenv("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_CHAT_URL).rstrip("/")
+    model = os.getenv("OLLAMA_MODEL", _DEFAULT_OLLAMA_CHAT_MODEL)
+    return base, model
+
+
+def call_ollama_chat(history: list[dict[str, str]]) -> str:
+    """
+    Appelle Ollama /api/chat avec la liste messages {'role','content'} (user | assistant).
+    Ne passe pas par le routeur LLM du diagnostic ; aucune clé API externe.
+    """
+    base, model = ollama_chat_config()
+    url = f"{base}/api/chat"
+    payload = {"model": model, "messages": history, "stream": False}
+    try:
+        r = requests.post(url, json=payload, timeout=120)
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        snippet = ""
+        if exc.response is not None:
+            snippet = (exc.response.text or "")[:160]
+        code = exc.response.status_code if exc.response else "?"
+        raise RuntimeError(
+            f"Ollama a répondu avec une erreur HTTP ({code}). "
+            f"Vérifiez que le modèle « {model} » est disponible (`ollama pull {model}`). {snippet}"
+        ) from exc
+    except requests.exceptions.ConnectionError as exc:
+        raise RuntimeError(
+            f"Impossible de joindre Ollama sur {base}. Vérifiez que le service tourne "
+            "et que OLLAMA_BASE_URL est correct."
+        ) from exc
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError("Le modèle local met trop longtemps à répondre. Réessayez.") from exc
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Erreur lors de l’appel à Ollama : {exc}") from exc
+
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise RuntimeError("Réponse invalide (pas du JSON). Vérifiez OLLAMA_BASE_URL.") from exc
+    msg = data.get("message") or {}
+    content = msg.get("content")
+    if content is None or content == "":
+        raise RuntimeError(
+            f"Réponse vide ou inattendue. Essayez `ollama pull {model}` si le modèle est absent."
+        )
+    return str(content)
+
+
+def render_chat_page() -> None:
+    init_chat_history()
+    base, chat_model = ollama_chat_config()
+
+    st.markdown("# Assistant IA local")
+    st.caption("Discutez avec le modèle local avant de lancer un diagnostic structuré.")
+    st.caption(f"Connexion **Ollama** · modèle `{chat_model}` · `{base}`")
+
+    if err_chat := st.session_state.pop("_chat_error", None):
+        with st.container():
+            st.error(err_chat)
+
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Votre message"):
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        try:
+            with st.spinner("Réponse du modèle local…"):
+                reply = call_ollama_chat(st.session_state.chat_history)
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+        except RuntimeError as exc:
+            st.session_state.chat_history.pop()
+            st.session_state["_chat_error"] = str(exc)
+        st.rerun()
+
+    render_footer_signature()
+
+
+def render_diagnostic_page() -> None:
+    st.markdown("# Diagnostic IA TPE/PME")
+    st.caption("Démo — scoring déterministe et enrichissement LLM.")
+
+    if st.session_state.pop("_toast_diagnostic_reloaded", False):
+        st.success("Diagnostic rechargé")
+    if st.session_state.pop("_toast_history_reset", False):
+        st.success("Historique réinitialisé")
+
+    submitted, company = render_diagnostic_form()
+
+    if submitted and company is not None:
+        with st.spinner("Analyse en cours (scoring + LLM)…"):
+            result = run_diagnostic(company)
+        save_diagnostic_to_history(company, result)
+        st.rerun()
+
+    company_view: dict[str, Any] | None = None
+    res_view: dict[str, Any] | None = None
+    init_history()
+    _hist = st.session_state.history
+    _ld = st.session_state.get("loaded_diagnostic")
+    if isinstance(_ld, dict):
+        _hi = _ld.get("history_index")
+        if _hi is None or _hi < 0 or _hi >= len(_hist):
+            st.session_state.loaded_diagnostic = None
+        else:
+            _co = _ld.get("company")
+            _re = _ld.get("result")
+            if _co is not None and _re is not None:
+                company_view, res_view = _co, _re
+
+    if company_view and res_view:
+        st.divider()
+        render_results(company_view, res_view)
+
+    render_footer_signature()
 
 
 # --- Historique session ------------------------------------------------------
@@ -476,10 +639,14 @@ def render_footer_signature() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
 st.set_page_config(page_title="NovetIA — Diagnostic IA", layout="wide", initial_sidebar_state="expanded")
 inject_minimal_styles()
 init_auth()
 init_history()
+init_navigation()
+init_chat_history()
 
 if not st.session_state.is_authenticated:
     with st.sidebar:
@@ -490,42 +657,12 @@ if not st.session_state.is_authenticated:
 
 with st.sidebar:
     render_user_sidebar()
-    render_history_sidebar()
-    render_admin_panel()
+    render_navigation_sidebar()
+    if st.session_state.current_page == "diagnostic":
+        render_history_sidebar()
+        render_admin_panel()
 
-st.markdown("# Diagnostic IA TPE/PME")
-st.caption("Démo — scoring déterministe et enrichissement LLM.")
-
-if st.session_state.pop("_toast_diagnostic_reloaded", False):
-    st.success("Diagnostic rechargé")
-if st.session_state.pop("_toast_history_reset", False):
-    st.success("Historique réinitialisé")
-
-submitted, company = render_diagnostic_form()
-
-if submitted and company is not None:
-    with st.spinner("Analyse en cours (scoring + LLM)…"):
-        result = run_diagnostic(company)
-    save_diagnostic_to_history(company, result)
-    st.rerun()
-
-company_view: dict[str, Any] | None = None
-res_view: dict[str, Any] | None = None
-init_history()
-_hist = st.session_state.history
-_ld = st.session_state.get("loaded_diagnostic")
-if isinstance(_ld, dict):
-    _hi = _ld.get("history_index")
-    if _hi is None or _hi < 0 or _hi >= len(_hist):
-        st.session_state.loaded_diagnostic = None
-    else:
-        _co = _ld.get("company")
-        _re = _ld.get("result")
-        if _co is not None and _re is not None:
-            company_view, res_view = _co, _re
-
-if company_view and res_view:
-    st.divider()
-    render_results(company_view, res_view)
-
-render_footer_signature()
+if st.session_state.current_page == "chat":
+    render_chat_page()
+else:
+    render_diagnostic_page()
