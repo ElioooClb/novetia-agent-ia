@@ -402,7 +402,12 @@ def save_diagnostic_to_history(company: dict[str, Any], result: dict[str, Any]) 
     init_history()
     gs = global_score_from_result(result)
     recs = result.get("recommendations") or []
-    report_md = build_report_markdown(company, recs)
+    report_md = build_report_markdown(
+        company,
+        recs,
+        executive_summary=result.get("executive_summary"),
+        final_recommendation=result.get("final_recommendation"),
+    )
     entry: dict[str, Any] = {
         "ts_iso": datetime.now(timezone.utc).isoformat(),
         "ts_display": _now_local_str(),
@@ -593,7 +598,11 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
 
     top = recs[0] if recs else {}
     roi_main = str(top.get("roi", "—")).strip() or "—"
-    next_action = str(top.get("next_steps", "—")).strip() or "—"
+    fr0 = res.get("final_recommendation")
+    if isinstance(fr0, dict) and str(fr0.get("par_quoi_commencer", "")).strip():
+        next_action = str(fr0.get("par_quoi_commencer")).strip()
+    else:
+        next_action = str(top.get("action_plan") or top.get("next_steps", "—")).strip() or "—"
     if len(next_action) > 220:
         next_action = next_action[:217] + "…"
 
@@ -622,24 +631,52 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
             st.caption("ROI estimé (1re reco.)")
             st.markdown(f"### {roi_main}")
 
+    exec_txt = res.get("executive_summary")
+    if exec_txt and str(exec_txt).strip():
+        with st.container(border=True):
+            st.markdown("#### Synthèse exécutive")
+            st.markdown(str(exec_txt).strip().replace("\n", "\n\n"))
+
+    fr = res.get("final_recommendation")
+    if isinstance(fr, dict) and (
+        str(fr.get("par_quoi_commencer", "")).strip() or str(fr.get("pourquoi", "")).strip()
+    ):
+        with st.container(border=True):
+            st.markdown("#### Recommandation finale")
+            if str(fr.get("par_quoi_commencer", "")).strip():
+                st.markdown(f"**Par quoi commencer** : {fr.get('par_quoi_commencer')}")
+            if str(fr.get("pourquoi", "")).strip():
+                st.markdown(f"**Pourquoi** : {fr.get('pourquoi')}")
+
     with st.container(border=True):
         st.caption("Prochaine action conseillée")
         if top.get("title"):
             st.markdown(f"**{top.get('title')}**")
         st.markdown(next_action)
 
-    st.markdown("#### Trois recommandations prioritaires")
+    st.markdown("#### Top 3 — cas d'usage IA priorisés")
     for i, rec in enumerate(recs[:3], start=1):
         with st.container(border=True):
-            st.markdown(f"**{i}.** {rec.get('title', 'Cas')}")
-            st.markdown(rec.get("summary", "") or "—")
+            st.markdown(f"##### {rec.get('title', f'Cas {i}')}")
+            obj = str(rec.get("business_objective", "")).strip()
+            ex = str(rec.get("concrete_example", "")).strip()
+            if obj:
+                st.markdown(f"**Objectif métier** — {obj}")
+            if ex:
+                st.markdown(f"**Exemple concret** — {ex}")
+            if not obj and not ex:
+                st.markdown(rec.get("summary", "") or "—")
             r1, r2, r3 = st.columns(3)
             ts = str(rec.get("time_saved", "—"))
             if len(ts) > 42:
                 ts = ts[:39] + "…"
             r1.metric("Gain temps (estim.)", ts)
             r2.metric("Difficulté", str(rec.get("difficulty", "—"))[:24])
-            r3.metric("ROI", str(rec.get("roi", "—"))[:28])
+            r3.metric("Horizon ROI", str(rec.get("roi", "—"))[:28])
+            plan = str(rec.get("action_plan", rec.get("next_steps", ""))).strip()
+            if plan and plan != "—":
+                with st.expander("Plan d'action (4–8 semaines)", expanded=False):
+                    st.markdown(plan.replace("\n", "\n\n"))
 
 
 def _ensure_pdf_cached(md: str) -> tuple[bytes | None, str | None]:
@@ -696,18 +733,22 @@ def render_report_actions(
     )
 
 
-def render_report_section(company: dict[str, Any], res: dict[str, Any]) -> None:
+def render_results(company: dict[str, Any], res: dict[str, Any]) -> None:
     recommendations = res.get("recommendations", [])
-    md = build_report_markdown(company, recommendations)
+    md = build_report_markdown(
+        company,
+        recommendations,
+        executive_summary=res.get("executive_summary"),
+        final_recommendation=res.get("final_recommendation"),
+    )
+    render_results_cards(company, res)
+    st.divider()
+    with st.expander("Aperçu du rapport (Markdown)", expanded=False):
+        st.markdown(md)
+    st.divider()
     sig = hashlib.sha256(md.encode("utf-8")).hexdigest()
     pdf_bytes, pdf_err = _ensure_pdf_cached(md)
     render_report_actions(pdf_bytes, pdf_err, sig)
-
-
-def render_results(company: dict[str, Any], res: dict[str, Any]) -> None:
-    render_results_cards(company, res)
-    st.divider()
-    render_report_section(company, res)
 
 
 # --- App ---------------------------------------------------------------------

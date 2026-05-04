@@ -193,7 +193,13 @@ def _markdown_to_pdf(pdf: Any, markdown_content: str) -> None:
     flush_paragraph()
 
 
-def build_report_markdown(company_data: dict[str, Any], recommendations: list[dict[str, Any]]) -> str:
+def build_report_markdown(
+    company_data: dict[str, Any],
+    recommendations: list[dict[str, Any]],
+    *,
+    executive_summary: str | None = None,
+    final_recommendation: dict[str, Any] | None = None,
+) -> str:
     """Construit le texte Markdown du rapport (sans écrire de fichier)."""
     lines: list[str] = []
     entreprise = str(company_data.get("entreprise", company_data.get("company_name", "")))
@@ -221,26 +227,52 @@ def build_report_markdown(company_data: dict[str, Any], recommendations: list[di
                 break
         lines.append(f"- **{label}** : {val or '—'}\n")
 
-    lines.append("\n## Synthèse du diagnostic\n")
-    lines.append(
-        "Ce rapport propose trois cas d'usage IA prioritaires, issus d'une base métiers "
-        "et d'un scoring sur vos réponses, puis enrichis par un modèle de langage lorsque l'API est disponible. "
-        "Les ordres de grandeur (temps, ROI) sont indicatifs et doivent être affinés en atelier.\n"
-    )
+    lines.append("\n## Synthèse exécutive\n")
+    if executive_summary and str(executive_summary).strip():
+        lines.append(f"{str(executive_summary).strip()}\n")
+    else:
+        lines.append(
+            "Trois cas d'usage IA prioritaires ont été retenus à partir du scoring métier et de vos réponses. "
+            "Une synthèse rédigée par le modèle n'est pas disponible (repli scoring ou réponse LLM partielle). "
+            "Les ordres de grandeur ci-dessous restent **indicatifs** et doivent être validés en atelier.\n"
+        )
 
     lines.append("\n## Cas d'usage IA prioritaires\n")
     for i, rec in enumerate(recommendations[:3], start=1):
-        lines.append(f"### {i}. {rec.get('title', 'Cas')}\n")
-        lines.append(f"{rec.get('summary', '')}\n")
+        title = str(rec.get("title", "Cas")).strip() or f"Cas {i}"
+        lines.append(f"### {title}\n")
+        obj = str(rec.get("business_objective", "")).strip()
+        ex = str(rec.get("concrete_example", "")).strip()
+        if obj:
+            lines.append(f"**Objectif métier** : {obj}\n\n")
+        if ex:
+            lines.append(f"**Exemple concret dans l'entreprise** : {ex}\n\n")
+        if not obj and not ex:
+            lines.append(f"{rec.get('summary', '')}\n\n")
         lines.append("\n| Critère | Détail |\n")
         lines.append("|---------|--------|\n")
-        lines.append(f"| Gain de temps (estim.) | {rec.get('time_saved', rec.get('impact', '—'))} |\n")
+        lines.append(f"| Gain de temps (estim.) | {rec.get('time_saved', '—')} |\n")
         lines.append(f"| Difficulté | {rec.get('difficulty', '—')} |\n")
-        lines.append(f"| Impact métier | {rec.get('impact', '—')} |\n")
-        lines.append(f"| ROI approximatif | {rec.get('roi', '—')} |\n")
+        lines.append(f"| Horizon ROI | {rec.get('roi', '—')} |\n")
+        if rec.get("impact"):
+            lines.append(f"| Effet métier | {rec.get('impact', '—')} |\n")
         if rec.get("typical_tasks"):
-            lines.append(f"| Tâches typiques | {rec.get('typical_tasks')} |\n")
-        lines.append(f"\n**Prochaines étapes** : {rec.get('next_steps', '—')}\n")
+            lines.append(f"| Tâches ciblées | {rec.get('typical_tasks')} |\n")
+        plan = str(rec.get("action_plan", rec.get("next_steps", ""))).strip()
+        lines.append(f"\n#### Plan d'action (4–8 semaines)\n\n{plan or '—'}\n")
+
+    lines.append("\n## Recommandation finale\n")
+    if final_recommendation and isinstance(final_recommendation, dict):
+        pq = str(final_recommendation.get("par_quoi_commencer", "")).strip() or "—"
+        why = str(final_recommendation.get("pourquoi", "")).strip() or "—"
+        lines.append(f"**Par quoi commencer** : {pq}\n\n")
+        lines.append(f"**Pourquoi** : {why}\n")
+    else:
+        lines.append(
+            "Prioriser **un pilote unique** sur 4 à 8 semaines, périmètre restreint, avec une mesure "
+            "simple avant/après (temps, qualité, satisfaction). Affiner la priorisation avec le premier cas "
+            "du tableau ci-dessus selon votre capacité de changement.\n"
+        )
 
     lines.append("\n## Limites du diagnostic\n")
     lines.append(
@@ -260,7 +292,13 @@ def build_report_markdown(company_data: dict[str, Any], recommendations: list[di
     return "".join(lines)
 
 
-def generate_markdown_report(company_data: dict[str, Any], recommendations: list[dict[str, Any]]) -> Path:
+def generate_markdown_report(
+    company_data: dict[str, Any],
+    recommendations: list[dict[str, Any]],
+    *,
+    executive_summary: str | None = None,
+    final_recommendation: dict[str, Any] | None = None,
+) -> Path:
     """
     Construit un rapport Markdown et l'enregistre dans outputs/.
     Retourne le chemin du fichier créé.
@@ -269,7 +307,12 @@ def generate_markdown_report(company_data: dict[str, Any], recommendations: list
     name = company_data.get("entreprise") or company_data.get("company_name") or "entreprise"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = _OUTPUTS_DIR / f"diagnostic_{_slug(str(name))}_{ts}.md"
-    text = build_report_markdown(company_data, recommendations)
+    text = build_report_markdown(
+        company_data,
+        recommendations,
+        executive_summary=executive_summary,
+        final_recommendation=final_recommendation,
+    )
     path.write_text(text, encoding="utf-8")
     return path
 
