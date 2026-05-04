@@ -57,9 +57,38 @@ Copier `.env.example` vers `.env` et renseigner les clés **sans les commiter**.
 | `MISTRAL_API_KEY` | Clé API Mistral |
 | `MISTRAL_MODEL` | Ex. `mistral-small-latest` |
 | `OLLAMA_BASE_URL` | Ex. `http://localhost:11434` |
-| `OLLAMA_MODEL` | Ex. `llama3.2` |
+| `OLLAMA_MODEL` | Ex. `llama3.2:3b` |
 
 Aucune clé ne doit figurer dans le code : tout passe par l’environnement / `.env`.
+
+## Mode LLM local avec Ollama
+
+1. **Installer** [Ollama](https://ollama.com/) sur la machine (Windows ou Linux).
+2. **Télécharger le modèle** utilisé par la démo (exemple) :
+   ```bash
+   ollama pull llama3.2:3b
+   ```
+3. **Configurer** le fichier `.env` à la racine du projet (copie de `.env.example`) :
+   - `LLM_PROVIDER=ollama`
+   - `OLLAMA_BASE_URL=http://localhost:11434`
+   - `OLLAMA_MODEL=llama3.2:3b`
+4. **Lancer** l’application :
+   ```bash
+   streamlit run app.py
+   ```
+5. La page **Assistant IA local** (chat) utilise les **mêmes** `OLLAMA_BASE_URL` et `OLLAMA_MODEL` que le diagnostic lorsque `LLM_PROVIDER=ollama`.
+
+### Revenir au mode API externe
+
+Dans `.env`, repassez par exemple à :
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=votre_cle
+OPENAI_MODEL=gpt-4o-mini
+```
+
+(ou `LLM_PROVIDER=mistral` avec `MISTRAL_API_KEY`). Redémarrez Streamlit après modification.
 
 ## Lancement Streamlit
 
