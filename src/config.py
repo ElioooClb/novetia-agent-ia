@@ -19,6 +19,28 @@ def _get_lower(key: str, default: str) -> str:
     return _get_str(key, default).lower()
 
 
+def _get_float_bounded(key: str, default: float, lo: float, hi: float) -> float:
+    raw = _get_str(key, "")
+    if not raw:
+        return default
+    try:
+        v = float(raw.replace(",", "."))
+    except ValueError:
+        return default
+    return max(lo, min(hi, v))
+
+
+def _get_int_bounded(key: str, default: int, lo: int, hi: int) -> int:
+    raw = _get_str(key, "")
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+    except ValueError:
+        return default
+    return max(lo, min(hi, v))
+
+
 _ALLOWED_LLM_PROVIDERS = frozenset({"openai", "mistral", "ollama"})
 
 
@@ -33,6 +55,9 @@ class Settings:
     mistral_model: str
     ollama_base_url: str
     ollama_model: str
+    ollama_chat_temperature: float
+    ollama_chat_num_predict: int
+    ollama_chat_num_ctx: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -50,6 +75,15 @@ class Settings:
             mistral_model=_get_str("MISTRAL_MODEL", "mistral-small-latest"),
             ollama_base_url=_get_str("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
             ollama_model=_get_str("OLLAMA_MODEL", "llama3.2:3b"),
+            ollama_chat_temperature=_get_float_bounded(
+                "OLLAMA_CHAT_TEMPERATURE", 0.3, lo=0.05, hi=0.95
+            ),
+            ollama_chat_num_predict=_get_int_bounded(
+                "OLLAMA_CHAT_MAX_TOKENS", 180, lo=32, hi=4096
+            ),
+            ollama_chat_num_ctx=_get_int_bounded(
+                "OLLAMA_CHAT_NUM_CTX", 2048, lo=512, hi=8192
+            ),
         )
 
 

@@ -115,6 +115,43 @@ def _ollama_post_json(url: str, payload: dict[str, Any], model: str, *, timeout:
     return data
 
 
+def ollama_chat_completion(
+    base_url: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    *,
+    temperature: float = 0.3,
+    num_predict: int = 180,
+    num_ctx: int = 2048,
+    timeout: int = 90,
+) -> str:
+    """
+    Appel Ollama /api/chat (assistant conversationnel local).
+
+    Les options (température, num_predict, num_ctx) ne s'appliquent pas au diagnostic,
+    qui utilise :class:`OllamaProvider` et l'endpoint /api/generate.
+    """
+    url = f"{base_url.rstrip('/')}/api/chat"
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "num_predict": num_predict,
+            "num_ctx": num_ctx,
+        },
+    }
+    data = _ollama_post_json(url, payload, model, timeout=timeout)
+    msg = data.get("message") or {}
+    content = msg.get("content")
+    if content is None or str(content).strip() == "":
+        raise RuntimeError(
+            f"Réponse vide depuis Ollama (chat). Essayez : ollama pull {model}"
+        )
+    return str(content)
+
+
 class OllamaProvider(LLMProvider):
     """Client HTTP vers l'API locale Ollama — un prompt par appel (/api/generate)."""
 

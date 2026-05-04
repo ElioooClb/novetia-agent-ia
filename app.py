@@ -18,7 +18,7 @@ import streamlit as st
 from src.agent import run_diagnostic
 from src.config import get_settings
 from src.demo_auth import validate_login
-from src.llm_provider import _ollama_post_json
+from src.local_chat import detect_diagnostic_intent, run_ollama_chat_assistant
 from src.report import build_report_markdown, generate_pdf_report
 
 # TODO: réactiver l'envoi email après configuration SMTP ou API email (voir src/email_report.py).
@@ -155,8 +155,8 @@ def render_admin_panel() -> None:
 
 
 # --- Navigation & chat Ollama local ------------------------------------------
-# Le chat utilise la même config Ollama que le projet (get_settings → OLLAMA_*),
-# via _ollama_post_json (src/llm_provider.py) pour l’appel /api/chat (pas d’API cloud ni clés).
+# Chat : src/local_chat.py (prompt système court + /api/chat + options OLLAMA_CHAT_*).
+# Diagnostic : src/agent.py + LLMProvider (prompt long ; Ollama utilise /api/generate).
 
 
 def init_navigation() -> None:
@@ -169,81 +169,13 @@ def init_chat_history() -> None:
         st.session_state.chat_history = []
 
 
-def detect_diagnostic_intent(user_message: str) -> bool:
-    """
-    Détecte une demande d’ouverture du parcours « Diagnostic IA » (sans appel LLM).
-    Règles simples : texte en minuscules + sous-chaînes / combinaisons de mots-clés.
-    """
-    t = user_message.strip().lower()
-    if not t:
-        return False
-    t = t.replace("’", "'")
-
-    phrases = (
-        "je veux faire un diagnostic",
-        "faire un diagnostic ia",
-        "faire un diagnostic",
-        "lance le diagnostic",
-        "lance diagnostic",
-        "lancer le diagnostic",
-        "lancer diagnostic",
-        "ouvre le diagnostic",
-        "ouvre diagnostic",
-        "ouvrir le diagnostic",
-        "va sur diagnostic",
-        "va au diagnostic",
-        "aller au diagnostic",
-        "passer au diagnostic",
-        "diagnostic ia de l'entreprise",
-        "diagnostic ia",
-        "audit ia",
-        "analyse mon entreprise",
-        "diagnostic de mon entreprise",
-        "diagnostic de l'entreprise",
-        "diagnostic entreprise",
-    )
-    if any(p in t for p in phrases):
-        return True
-    if "diagnostic" in t and any(
-        x in t
-        for x in (
-            "lance",
-            "lancer",
-            "ouvre",
-            "ouvrir",
-            "va sur",
-            "va au",
-            "aller",
-            "passer",
-            "ouvre-moi",
-        )
-    ):
-        return True
-    if "diagnostic" in t and "entreprise" in t:
-        return True
-    return False
-
-
 def call_ollama_chat(history: list[dict[str, str]]) -> str:
-    """Appelle Ollama /api/chat avec get_settings() (OLLAMA_BASE_URL, OLLAMA_MODEL)."""
+    """Délègue au module chat local (prompt système + options Ollama dédiées)."""
     try:
         cfg = get_settings()
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
-    url = f"{cfg.ollama_base_url.rstrip('/')}/api/chat"
-    payload: dict[str, Any] = {
-        "model": cfg.ollama_model,
-        "messages": history,
-        "stream": False,
-    }
-    data = _ollama_post_json(url, payload, cfg.ollama_model)
-    msg = data.get("message") or {}
-    content = msg.get("content")
-    if content is None or str(content).strip() == "":
-        raise RuntimeError(
-            f"Réponse vide depuis Ollama (chat). Essayez : ollama pull {cfg.ollama_model}"
-        )
-    return str(content)
+    return run_ollama_chat_assistant(history, cfg)
 
 
 def render_chat_page() -> None:
@@ -494,7 +426,9 @@ def render_llm_sidebar_compact() -> None:
             st.caption("**Diagnostic** : Ollama **local**")
             st.caption(f"Modèle : `{cfg.ollama_model}` @ `{cfg.ollama_base_url}`")
         st.caption(
-            "**Assistant IA local (chat)** : utilise les mêmes `OLLAMA_BASE_URL` et `OLLAMA_MODEL`."
+            "**Assistant IA local (chat)** : même `OLLAMA_BASE_URL` / `OLLAMA_MODEL`, "
+            f"avec options dédiées (`OLLAMA_CHAT_TEMPERATURE`={cfg.ollama_chat_temperature}, "
+            f"`OLLAMA_CHAT_MAX_TOKENS`={cfg.ollama_chat_num_predict}, `OLLAMA_CHAT_NUM_CTX`={cfg.ollama_chat_num_ctx})."
         )
 
 
