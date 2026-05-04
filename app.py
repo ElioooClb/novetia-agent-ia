@@ -222,6 +222,8 @@ def render_chat_page() -> None:
             f"**Ollama** (chat) : `{cfg_ok.ollama_model}` @ `{cfg_ok.ollama_base_url}` · "
             f"fournisseur **diagnostic** configuré : **{cfg_ok.llm_provider}**"
         )
+    st.write("")
+    render_product_guide_expander()
 
     if err_chat := st.session_state.pop("_chat_error", None):
         with st.container():
@@ -276,6 +278,8 @@ def render_diagnostic_page() -> None:
             )
     except ValueError as exc:
         st.error(str(exc))
+    st.write("")
+    render_product_guide_expander()
 
     if st.session_state.pop("_toast_diagnostic_reloaded", False):
         st.success("Diagnostic rechargé")
@@ -754,8 +758,6 @@ with st.sidebar:
     if st.session_state.current_page == "diagnostic":
         render_history_sidebar()
         render_admin_panel()
-
-render_product_guide_expander()
 
 if st.session_state.current_page == "chat":
     render_chat_page()
