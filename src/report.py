@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
+_ROOT = Path(__file__).resolve().parent.parent
+_OUTPUTS_DIR = _ROOT / "outputs"
+_ASSET_NOTO_REG = _ROOT / "assets" / "fonts" / "NotoSans-Regular.ttf"
+_ASSET_NOTO_BOLD = _ROOT / "assets" / "fonts" / "NotoSans-Bold.ttf"
+
+# Nom logique fpdf2 pour la police Unicode (export PDF uniquement)
+_PDF_FONT_FAMILY = "NovetPDF"
 
 
 def _slug(text: str) -> str:
@@ -28,7 +35,7 @@ def _strip_inline_markdown(text: str) -> str:
 
 
 def _normalize_pdf_text(text: str) -> str:
-    """Normalise Unicode ; remplace les glyphes problématiques par des équivalents ASCII si besoin."""
+    """Normalise Unicode (NFC) ; harmonise apostrophes / tirets typographiques."""
     s = unicodedata.normalize("NFC", text)
     # Guillemets / apostrophes typographiques courants
     s = s.replace("\u2019", "'").replace("\u2018", "'")
@@ -38,16 +45,75 @@ def _normalize_pdf_text(text: str) -> str:
     return s
 
 
-def _text_for_core_font(text: str) -> str:
+def sanitize_for_pdf(text: str) -> str:
     """
-    Texte compatible avec les polices PDF standard (Helvetica).
-    Accents français : suppression des signes diacritiques (café -> cafe).
-    Caractères non représentables : remplacés par '?' de façon déterministe.
+    Nettoyage dédié export PDF : conserve les accents français, retire ou remplace
+    les pictogrammes mal rendus par les polices (ex. étoile ⭐ → rien / espace).
     """
     s = _normalize_pdf_text(text)
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    return s.encode("latin-1", errors="replace").decode("latin-1")
+    for old, new in (
+        ("⭐", ""),
+        ("★", ""),
+        ("✅", "[OK]"),
+        ("✓", ""),
+        ("✔", ""),
+        ("🔹", "-"),
+        ("\ufe0f", ""),  # variation selector
+        ("\u200b", ""),  # zero-width space
+    ):
+        s = s.replace(old, new)
+    # Supprime la plupart des emoji étendus (hors plan BMP) souvent rendus en « ? »
+    s = re.sub(r"[\U0001F300-\U0001FAFF]", "", s)
+    return s
+
+
+def _resolve_pdf_ttf_paths() -> tuple[Path, Path]:
+    """
+    Résout (regular.ttf, bold.ttf) pour un rendu Unicode fiable.
+    Priorité : polices Noto embarquées dans assets/fonts/, puis système.
+    """
+    min_size = 8000
+
+    def _ok(p: Path) -> bool:
+        return p.is_file() and p.stat().st_size >= min_size
+
+    if _ok(_ASSET_NOTO_REG):
+        bold = _ASSET_NOTO_BOLD if _ok(_ASSET_NOTO_BOLD) else _ASSET_NOTO_REG
+        return _ASSET_NOTO_REG, bold
+
+    windir = os.environ.get("WINDIR", "C:\\Windows")
+    win_fonts = Path(windir) / "Fonts"
+    arial = win_fonts / "arial.ttf"
+    arialbd = win_fonts / "arialbd.ttf"
+    if _ok(arial):
+        return arial, arialbd if _ok(arialbd) else arial
+
+    linux_dejavu = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    linux_dejavu_b = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    if _ok(linux_dejavu):
+        return linux_dejavu, linux_dejavu_b if _ok(linux_dejavu_b) else linux_dejavu
+
+    linux_lib = Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf")
+    linux_lib_b = Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")
+    if _ok(linux_lib):
+        return linux_lib, linux_lib_b if _ok(linux_lib_b) else linux_lib
+
+    raise RuntimeError(
+        "Aucune police TrueType Unicode trouvée pour le PDF. "
+        "Placez NotoSans-Regular.ttf et NotoSans-Bold.ttf dans assets/fonts/ "
+        "(voir dépôt), ou installez les polices DejaVu / Liberation sur le système."
+    )
+
+
+def _register_unicode_fonts(pdf: Any) -> None:
+    reg, bold = _resolve_pdf_ttf_paths()
+    pdf.add_font(_PDF_FONT_FAMILY, "", str(reg))
+    pdf.add_font(_PDF_FONT_FAMILY, "B", str(bold))
+
+
+def _prepare_pdf_text(text: str) -> str:
+    """Texte prêt pour multi_cell avec police Unicode (sans passer par Latin-1)."""
+    return sanitize_for_pdf(text)
 
 
 def _split_md_table_cells(line: str) -> list[str]:
@@ -86,42 +152,42 @@ def _parse_table_row(line: str) -> str | None:
 
 
 def _emit_paragraph(pdf: Any, text: str, *, size: float = 10, style: str = "", indent_mm: float = 0) -> None:
-    text = _text_for_core_font(_strip_inline_markdown(text))
+    text = _prepare_pdf_text(_strip_inline_markdown(text))
     if not text.strip():
         pdf.ln(2)
         return
     usable_w = pdf.w - pdf.l_margin - pdf.r_margin - indent_mm
     pdf.set_x(pdf.l_margin + indent_mm)
-    pdf.set_font("helvetica", style, size)
+    pdf.set_font(_PDF_FONT_FAMILY, style, size)
     line_h = max(4.5, size * 0.48)
     pdf.multi_cell(usable_w, line_h, text)
     pdf.ln(1)
 
 
 def _emit_heading(pdf: Any, text: str, level: int) -> None:
-    text = _text_for_core_font(_strip_inline_markdown(text))
+    text = _prepare_pdf_text(_strip_inline_markdown(text))
     if level == 1:
         pdf.ln(2)
-        pdf.set_font("helvetica", "B", 16)
+        pdf.set_font(_PDF_FONT_FAMILY, "B", 16)
         pdf.multi_cell(0, 8, text)
         pdf.ln(3)
     elif level == 2:
         pdf.ln(3)
-        pdf.set_font("helvetica", "B", 13)
+        pdf.set_font(_PDF_FONT_FAMILY, "B", 13)
         pdf.multi_cell(0, 6.5, text)
         pdf.ln(2)
     else:
         pdf.ln(2)
-        pdf.set_font("helvetica", "B", 11)
+        pdf.set_font(_PDF_FONT_FAMILY, "B", 11)
         pdf.multi_cell(0, 5.8, text)
         pdf.ln(1.2)
 
 
 def _emit_bullet(pdf: Any, text: str) -> None:
-    full = "- " + _text_for_core_font(_strip_inline_markdown(text))
+    full = "- " + _prepare_pdf_text(_strip_inline_markdown(text))
     usable_w = pdf.w - pdf.l_margin - pdf.r_margin - 6
     pdf.set_x(pdf.l_margin + 6)
-    pdf.set_font("helvetica", "", 10)
+    pdf.set_font(_PDF_FONT_FAMILY, "", 10)
     pdf.multi_cell(usable_w, 5.2, full)
     pdf.ln(0.5)
 
@@ -319,14 +385,11 @@ def generate_markdown_report(
 
 def generate_pdf_report(markdown_content: str, output_path: str) -> str:
     """
-    Génère un fichier PDF simple à partir du contenu Markdown (fpdf2, police Helvetica).
+    Génère un fichier PDF à partir du Markdown (fpdf2 + police TrueType Unicode).
 
-    Éléments pris en charge : titres # / ## / ###, paragraphes, listes à puces "- ",
-    listes numérotées, lignes de tableau "| ... |" (séparateurs ignorés).
-
-    Les accents sont translittérés en ASCII (suppression des diacritiques) pour une
-    compatibilité maximale avec les polices standard ; les glyphes non encodables en
-    Latin-1 sont remplacés par "?".
+    Titres, paragraphes, listes et tableaux simples "| ... |" sont pris en charge.
+    Les accents et ligatures françaises sont conservés ; les emoji problématiques
+    sont retirés ou remplacés via :func:`sanitize_for_pdf`.
 
     Args:
         markdown_content: texte Markdown complet du rapport.
@@ -353,7 +416,9 @@ def generate_pdf_report(markdown_content: str, output_path: str) -> str:
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_margins(18, 18, 18)
     pdf.set_auto_page_break(auto=True, margin=16)
+    _register_unicode_fonts(pdf)
     pdf.add_page()
+    pdf.set_font(_PDF_FONT_FAMILY, "", 10)
 
     try:
         _markdown_to_pdf(pdf, markdown_content)
