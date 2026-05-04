@@ -90,7 +90,7 @@ def render_login_screen() -> None:
 
 
 def render_user_sidebar() -> None:
-    st.markdown("### Session")
+    st.markdown("#### Session")
     user_email = st.session_state.get("current_user") or "—"
     role_raw = st.session_state.get("current_role")
     role_display = (
@@ -100,9 +100,9 @@ def render_user_sidebar() -> None:
         if role_raw == "user"
         else "—"
     )
-    st.caption(user_email)
-    st.caption(f"Rôle : {role_display}")
-    if st.button("Se déconnecter", use_container_width=True):
+    st.caption(f"👤 {user_email}")
+    st.caption(f"🔑 Rôle : **{role_display}**")
+    if st.button("🚪 Se déconnecter", use_container_width=True):
         logout()
         st.rerun()
     st.divider()
@@ -110,10 +110,10 @@ def render_user_sidebar() -> None:
 
 def render_navigation_sidebar() -> None:
     """Bascule entre la vue chat locale et le diagnostic métier."""
-    st.markdown("### Navigation")
+    st.markdown("#### Navigation")
     page = st.session_state.get("current_page", "chat")
     if st.button(
-        "Assistant IA local",
+        "💬 Assistant IA local",
         use_container_width=True,
         type="primary" if page == "chat" else "secondary",
         key="nav_sidebar_chat",
@@ -121,21 +121,50 @@ def render_navigation_sidebar() -> None:
         st.session_state.current_page = "chat"
         st.rerun()
     if st.button(
-        "Diagnostic IA de l'entreprise",
+        "📋 Diagnostic IA entreprise",
         use_container_width=True,
         type="primary" if page == "diagnostic" else "secondary",
         key="nav_sidebar_diagnostic",
     ):
         st.session_state.current_page = "diagnostic"
         st.rerun()
+    active = "Assistant IA local" if page == "chat" else "Diagnostic IA entreprise"
+    st.caption(f"📍 Page active : **{active}**")
     st.divider()
+
+
+def render_configuration_sidebar() -> None:
+    """Réglages LLM affichés dans la section Configuration."""
+    st.markdown("#### Configuration")
+    with st.expander("⚙️ Modèles et options (détail)", expanded=False):
+        try:
+            cfg = get_settings()
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        prov = cfg.llm_provider
+        if prov == "openai":
+            st.caption("**Diagnostic** : OpenAI (API externe)")
+            st.caption(f"Modèle : `{cfg.openai_model}`")
+        elif prov == "mistral":
+            st.caption("**Diagnostic** : Mistral (API externe)")
+            st.caption(f"Modèle : `{cfg.mistral_model}`")
+        else:
+            st.caption("**Diagnostic** : Ollama **local**")
+            st.caption(f"Modèle : `{cfg.ollama_model}` @ `{cfg.ollama_base_url}`")
+        st.caption(
+            "**Chat local** : même serveur / modèle Ollama, avec options dédiées "
+            f"(`OLLAMA_CHAT_TEMPERATURE`={cfg.ollama_chat_temperature}, "
+            f"`OLLAMA_CHAT_MAX_TOKENS`={cfg.ollama_chat_num_predict}, "
+            f"`OLLAMA_CHAT_NUM_CTX`={cfg.ollama_chat_num_ctx})."
+        )
 
 
 def render_admin_panel() -> None:
     if st.session_state.get("current_role") != "admin":
         return
     hist = st.session_state.get("history") or []
-    with st.expander("Espace admin", expanded=False):
+    with st.expander("🔐 Espace admin", expanded=False):
         st.caption(f"Diagnostics réalisés (session) : **{len(hist)}**")
         if not hist:
             st.caption("Dernier diagnostic : —")
@@ -387,6 +416,14 @@ def inject_minimal_styles() -> None:
         .block-container { padding-top: 1.25rem; padding-bottom: 2rem; max-width: 920px; }
         h1 { font-weight: 600; letter-spacing: -0.02em; color: #1a1a1a; }
         [data-testid="stSidebar"] { background-color: #fafafa; border-right: 1px solid #eaeaea; }
+        section[data-testid="stSidebar"] h4 {
+            font-size: 0.9rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.02em;
+            color: #374151 !important;
+            margin-top: 0.35rem !important;
+            margin-bottom: 0.4rem !important;
+        }
         section[data-testid="stSidebar"] button {
             justify-content: flex-start !important;
             text-align: left !important;
@@ -408,36 +445,12 @@ def inject_minimal_styles() -> None:
     )
 
 
-def render_llm_sidebar_compact() -> None:
-    with st.expander("Configuration LLM", expanded=False):
-        try:
-            cfg = get_settings()
-        except ValueError as exc:
-            st.error(str(exc))
-            return
-        prov = cfg.llm_provider
-        if prov == "openai":
-            st.caption("**Diagnostic** : OpenAI (API externe)")
-            st.caption(f"Modèle : `{cfg.openai_model}`")
-        elif prov == "mistral":
-            st.caption("**Diagnostic** : Mistral (API externe)")
-            st.caption(f"Modèle : `{cfg.mistral_model}`")
-        else:
-            st.caption("**Diagnostic** : Ollama **local**")
-            st.caption(f"Modèle : `{cfg.ollama_model}` @ `{cfg.ollama_base_url}`")
-        st.caption(
-            "**Assistant IA local (chat)** : même `OLLAMA_BASE_URL` / `OLLAMA_MODEL`, "
-            f"avec options dédiées (`OLLAMA_CHAT_TEMPERATURE`={cfg.ollama_chat_temperature}, "
-            f"`OLLAMA_CHAT_MAX_TOKENS`={cfg.ollama_chat_num_predict}, `OLLAMA_CHAT_NUM_CTX`={cfg.ollama_chat_num_ctx})."
-        )
-
-
 def render_history_sidebar() -> None:
     """Liste verticale cliquable type navigation (du plus récent au plus ancien)."""
     init_history()
     history: list[dict[str, Any]] = st.session_state.history
 
-    st.markdown("### Historique")
+    st.markdown("##### Historique (session)")
     if not history:
         st.caption("Aucun diagnostic dans l'historique")
         return
@@ -469,7 +482,7 @@ def render_history_sidebar() -> None:
             st.session_state["_toast_diagnostic_reloaded"] = True
             st.rerun()
 
-    if st.button("Réinitialiser l'historique", type="secondary", use_container_width=True):
+    if st.button("🗑️ Réinitialiser l'historique", type="secondary", use_container_width=True):
         st.session_state.history = []
         st.session_state.loaded_diagnostic = None
         for k in ("_report_sig", "_report_pdf_bytes", "_report_pdf_error"):
@@ -477,7 +490,25 @@ def render_history_sidebar() -> None:
         st.session_state["_toast_history_reset"] = True
         st.rerun()
 
-    st.divider()
+
+def render_product_guide_expander() -> None:
+    """Aide contextuelle : chat vs diagnostic, langage simple (hors logique métier)."""
+    with st.expander("❓ Comprendre NovetIA — chat et diagnostic", expanded=False):
+        st.markdown(
+            """
+**À quoi sert cet outil ?**  
+Il vous aide à imaginer **concrètement** où l’intelligence artificielle peut vous faire gagner du temps ou clarifier un sujet, **sans** vous noyer de technique.
+
+**Assistant IA local (conversation)**  
+Vous discutez avec un modèle installé **sur votre machine**. Les réponses sont **courtes** et rapides : idéal pour une question ponctuelle, une définition ou pour s’orienter.  
+Ce n’est **pas** une analyse complète de votre entreprise.
+
+**Diagnostic IA de l’entreprise**  
+Vous répondez à un **questionnaire** sur votre activité (taille, secteur, irritants, objectifs…). L’outil vous propose ensuite **trois pistes prioritaires**, une synthèse et un **rapport** à consulter ou à télécharger. C’est le parcours le plus **structuré** : synthèse, priorités et rapport à télécharger.
+
+**En une phrase** : le **chat** répond vite à la volée ; le **diagnostic** s’appuie sur **vos réponses** pour un résultat **plus structuré** et actionnable.
+            """.strip()
+        )
 
 
 def render_diagnostic_form() -> tuple[bool, dict[str, Any] | None]:
@@ -719,10 +750,12 @@ if not st.session_state.is_authenticated:
 with st.sidebar:
     render_user_sidebar()
     render_navigation_sidebar()
-    render_llm_sidebar_compact()
+    render_configuration_sidebar()
     if st.session_state.current_page == "diagnostic":
         render_history_sidebar()
         render_admin_panel()
+
+render_product_guide_expander()
 
 if st.session_state.current_page == "chat":
     render_chat_page()

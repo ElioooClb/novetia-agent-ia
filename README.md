@@ -1,124 +1,139 @@
-# NovetIA — Agent diagnostic IA (TPE/PME)
+# NovetIA — Diagnostic IA TPE/PME
 
-Projet Python de démonstration : **agent conversationnel métier** qui interroge un dirigeant (via formulaire), analyse les réponses, croise une base de cas d’usage IA et propose **trois recommandations prioritaires** avec ordres de grandeur (impact, difficulté, gain de temps, ROI approximatif).
+Application **Streamlit** de démonstration : aide les dirigeants de petites structures à **prioriser des usages de l’IA** adaptés à leur contexte, avec un parcours structuré (formulaire → scoring → enrichissement LLM → rapport).
 
-## Objectif du test
+---
 
-Rendre compte d’une chaîne complète **données → outil (JSON) → règles (scoring) → LLM → livrable (Markdown)** dans un format **simple, lisible et démontrable en ~5 minutes**, pour un entretien d’alternance **IA & Innovation** chez NovetIA.
+## Objectif
+
+- Proposer une **expérience claire** : conversation légère d’un côté, **diagnostic guidé** de l’autre.
+- Montrer une chaîne **données → règles métier (scoring) → LLM → livrable** (Markdown / PDF), exploitable en présentation ou en atelier.
+- Rester **pédagogique** : résultats compréhensibles même sans culture technique approfondie.
+
+---
 
 ## Fonctionnalités
 
-- Formulaire dirigeant (entreprise, secteur, taille, irritants, tâches répétitives, outils, objectif, maturité numérique).
-- Chargement d’une base de cas d’usage depuis `data/use_cases_ai.json`.
-- **Scoring déterministe** : les trois meilleurs cas sont identifiés même si le LLM est indisponible.
-- **Enrichissement LLM** (OpenAI, Mistral ou Ollama) via une abstraction `LLMProvider`.
-- **Repli automatique** sur le scoring si l’API échoue ou si la réponse n’est pas du JSON valide.
-- Génération d’un **rapport Markdown** (aperçu, téléchargement, enregistrement dans `outputs/`).
+| Zone | Description |
+|------|-------------|
+| **Connexion démo** | Comptes de démonstration (identifiants via `.env`, voir `.env.example`). |
+| **Assistant IA local** | Chat avec **Ollama** sur la machine : réponses courtes, orientation générale ; ne remplace pas le diagnostic structuré. |
+| **Diagnostic IA de l’entreprise** | Formulaire (secteur, taille, irritants, objectifs, etc.), **top 3** cas d’usage issus d’une base JSON, enrichissement par **LLM** (OpenAI, Mistral ou Ollama). |
+| **Repli scoring** | Si le LLM est indisponible ou renvoie un format inattendu, les trois recommandations restent cohérentes grâce au moteur de score déterministe. |
+| **Rapports** | Synthèse, fiches par cas, export **Markdown** et **PDF** (polices Unicode pour le français). |
+| **Historique de session** | Liste des diagnostics de la session courante (vue diagnostic). |
+
+---
 
 ## Architecture
 
 ```
 novetia-agent-ia/
-├── app.py                 # Interface Streamlit
+├── app.py                    # Interface Streamlit (navigation, pages, sidebar)
 ├── requirements.txt
 ├── .env.example
-├── README.md
-├── data/use_cases_ai.json   # Base métier (outil externe)
-├── outputs/                 # Rapports générés (.md)
+├── assets/fonts/             # Polices PDF (Noto Sans, etc.)
+├── data/use_cases_ai.json    # Base métier des cas d’usage IA
+├── outputs/                  # Rapports .md exportés
 └── src/
-    ├── config.py          # Variables d’environnement (python-dotenv)
-    ├── llm_provider.py    # OpenAI, Mistral, Ollama — même interface
-    ├── tools.py           # Lecture / filtrage JSON
-    ├── scoring.py         # Score déterministe → top 3
-    ├── agent.py           # Orchestration + prompt + repli
-    └── report.py          # Export Markdown
+    ├── config.py             # Chargement .env (LLM, Ollama, options chat)
+    ├── demo_auth.py          # Authentification démo (CLIENT_*, ADMIN_*)
+    ├── local_chat.py         # Prompt + options dédiées au chat Ollama (/api/chat)
+    ├── llm_provider.py       # OpenAI, Mistral, Ollama — diagnostic (/api/generate ou APIs cloud)
+    ├── tools.py              # Lecture / filtrage de la base JSON
+    ├── scoring.py            # Score déterministe → top 3
+    ├── agent.py              # Orchestration diagnostic, prompt structuré, parsing JSON
+    └── report.py             # Markdown + PDF
 ```
 
-Le choix du fournisseur se fait avec **`LLM_PROVIDER`** (`openai`, `mistral`, `ollama`). Pour passer du cloud au **local**, il suffit de basculer vers `ollama` et de lancer un modèle sur `OLLAMA_BASE_URL` (par défaut `http://localhost:11434`), sans changer le reste de l’application.
+**Flux simplifié**
+
+1. L’utilisateur remplit le **formulaire diagnostic** (ou discute dans le **chat**).
+2. Le **scoring** classe les cas d’usage à partir de `data/use_cases_ai.json`.
+3. Un **appel LLM** enrichit les trois premiers cas (selon `LLM_PROVIDER`).
+4. **`report.py`** assemble le **Markdown** puis le **PDF**.
+
+---
 
 ## Installation
+
+### Prérequis
+
+- Python **3.10+** recommandé  
+- Un compte / clé si vous utilisez **OpenAI** ou **Mistral** ; **Ollama** pour un mode entièrement local  
+
+### Étapes
 
 ```bash
 cd novetia-agent-ia
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux / macOS
 pip install -r requirements.txt
 ```
 
-Copier `.env.example` vers `.env` et renseigner les clés **sans les commiter**.
+Copier **`.env.example`** vers **`.env`** et renseigner les variables (sans commiter `.env`).
 
-## Configuration (.env)
-
-| Variable | Rôle |
-|----------|------|
-| `LLM_PROVIDER` | `openai`, `mistral` ou `ollama` |
-| `OPENAI_API_KEY` | Clé API OpenAI |
-| `OPENAI_MODEL` | Ex. `gpt-4o-mini` |
-| `MISTRAL_API_KEY` | Clé API Mistral |
-| `MISTRAL_MODEL` | Ex. `mistral-small-latest` |
-| `OLLAMA_BASE_URL` | Ex. `http://localhost:11434` |
-| `OLLAMA_MODEL` | Ex. `llama3.2:3b` |
-
-Aucune clé ne doit figurer dans le code : tout passe par l’environnement / `.env`.
-
-## Mode LLM local avec Ollama
-
-1. **Installer** [Ollama](https://ollama.com/) sur la machine (Windows ou Linux).
-2. **Télécharger le modèle** utilisé par la démo (exemple) :
-   ```bash
-   ollama pull llama3.2:3b
-   ```
-3. **Configurer** le fichier `.env` à la racine du projet (copie de `.env.example`) :
-   - `LLM_PROVIDER=ollama`
-   - `OLLAMA_BASE_URL=http://localhost:11434`
-   - `OLLAMA_MODEL=llama3.2:3b`
-4. **Lancer** l’application :
-   ```bash
-   streamlit run app.py
-   ```
-5. La page **Assistant IA local** (chat) utilise les **mêmes** `OLLAMA_BASE_URL` et `OLLAMA_MODEL` que le diagnostic lorsque `LLM_PROVIDER=ollama`.
-
-### Revenir au mode API externe
-
-Dans `.env`, repassez par exemple à :
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=votre_cle
-OPENAI_MODEL=gpt-4o-mini
-```
-
-(ou `LLM_PROVIDER=mistral` avec `MISTRAL_API_KEY`). Redémarrez Streamlit après modification.
-
-## Lancement Streamlit
+### Lancer l’application
 
 ```bash
 streamlit run app.py
 ```
 
-Ouvrir l’URL indiquée dans le terminal (souvent `http://localhost:8501`).
-
-## Choix techniques (résumé)
-
-- **Streamlit** : mise en page rapide pour une démo oral / jury.
-- **Scoring non ML** : garantit un résultat cohérent et **explicable** sans dépendre du réseau.
-- **Abstraction `LLMProvider`** : un seul point d’extension pour brancher **OpenAI**, **Mistral** ou **Ollama** (HTTP local).
-- **JSON métier** : simule un référentiel ou un outil métier versionnable hors code.
-
-## Limites connues
-
-- Pas d’authentification ni de multi-utilisateurs.
-- Le scoring par mots-clés est volontairement naïf (démo, pas un moteur de recommandation production).
-- Les estimations ROI / temps sont **indicatives** ; elles doivent être validées en atelier avec des données réelles.
-- La qualité du JSON renvoyé par le LLM peut varier selon le modèle ; un repli sur le scoring est prévu.
-
-## Pistes d’amélioration
-
-- Embeddings / RAG sur une base documentaire interne.
-- Historique des diagnostics et export PDF.
-- Métriques d’usage et journalisation structurée.
-- Tests unitaires sur `scoring` et parsing JSON LLM.
+Ouvrir l’URL affichée dans le terminal (souvent `http://localhost:8501`).
 
 ---
 
-*Architecture compatible **API cloud** (OpenAI / Mistral) et **modèle local** via **Ollama** (`OLLAMA_BASE_URL`), en conservant la même interface `generate(prompt) -> str`.*
+## Stratégie LLM
+
+### Choix du fournisseur (`LLM_PROVIDER`)
+
+| Valeur | Usage principal | Remarque |
+|--------|-----------------|----------|
+| `openai` | Diagnostic via API OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| `mistral` | Diagnostic via API Mistral | `MISTRAL_API_KEY`, `MISTRAL_MODEL` |
+| `ollama` | Diagnostic via modèle **local** | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
+
+Le **chat** « Assistant IA local » utilise **toujours Ollama** (`OLLAMA_BASE_URL` / `OLLAMA_MODEL`) pour rester sur la machine, quel que soit `LLM_PROVIDER` utilisé pour le **diagnostic**.
+
+### Options dédiées au chat (réponses plus courtes)
+
+Variables optionnelles (voir `.env.example`) :
+
+- `OLLAMA_CHAT_TEMPERATURE` — température du chat (ex. `0.3`)
+- `OLLAMA_CHAT_MAX_TOKENS` — borne de génération (`num_predict`, ex. `180`)
+- `OLLAMA_CHAT_NUM_CTX` — taille de contexte (ex. `2048`)
+
+Le **diagnostic** conserve un prompt **long et structuré** (JSON) et n’applique pas ces limites du chat.
+
+### Ollama : installation rapide
+
+1. Installer [Ollama](https://ollama.com/).
+2. Télécharger un modèle, par exemple : `ollama pull llama3.2:3b`
+3. Dans `.env` : `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://localhost:11434`, `OLLAMA_MODEL=llama3.2:3b`
+
+---
+
+## Configuration (.env) — rappel
+
+Les secrets et URLs ne doivent **pas** être codés en dur : tout passe par **`.env`** (voir **`.env.example`** pour la liste des variables : LLM, Ollama, chat, comptes démo).
+
+---
+
+## Limites connues (démo)
+
+- Authentification **démo** uniquement, non adaptée à la production.
+- Scoring volontairement simple (mots-clés / règles), pas un moteur de recommandation avancé.
+- Estimations de temps / ROI **indicatives** — à valider en atelier avec des données réelles.
+
+---
+
+## Pistes d’évolution
+
+- RAG / embeddings sur documentation interne  
+- Persistance des diagnostics et multi-utilisateurs  
+- Tests automatisés sur `scoring` et parsing JSON  
+
+---
+
+*NovetIA — démonstration **cloud** (OpenAI / Mistral) ou **locale** (Ollama), avec une interface unique Streamlit.*
