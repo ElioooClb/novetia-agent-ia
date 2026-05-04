@@ -17,21 +17,18 @@ import streamlit as st
 
 from src.agent import run_diagnostic
 from src.config import get_settings
+from src.demo_auth import validate_login
 from src.llm_provider import _ollama_post_json
 from src.report import build_report_markdown, generate_pdf_report
 
 # TODO: réactiver l'envoi email après configuration SMTP ou API email (voir src/email_report.py).
 
 # --- Authentification démo ----------------------------------------------------
-# Volontairement minimal : identifiants en dur, session navigateur uniquement.
-# Ne pas journaliser ni afficher les mots de passe.
+# Identifiants : CLIENT_EMAIL, CLIENT_PASSWORD, ADMIN_EMAIL, ADMIN_PASSWORD (.env).
+# Chargement via os.getenv dans src/demo_auth.py (après load_dotenv dans src/config.py).
+# Session navigateur uniquement. Ne pas journaliser les mots de passe.
 # TODO production : utilisateurs en base, mots de passe hashés (ex. bcrypt / Argon2),
 # flux de connexion sécurisé (HTTPS, gestion de session côté serveur ou tokens).
-
-DEMO_USERS: dict[str, dict[str, str]] = {
-    "client@demo.fr": {"password": "client123", "role": "user"},
-    "admin@demo.fr": {"password": "admin123", "role": "admin"},
-}
 
 
 def init_auth() -> None:
@@ -43,13 +40,15 @@ def init_auth() -> None:
         st.session_state.current_role = None
 
 
-def authenticate_user(email: str, password: str) -> tuple[bool, str | None]:
-    """Valide email / mot de passe contre les comptes démo. Ne trace jamais le secret."""
-    key = email.strip().lower()
-    row = DEMO_USERS.get(key)
-    if not row or row["password"] != password:
-        return False, None
-    return True, row["role"]
+def complete_login(email: str, role: str | None) -> None:
+    """Établit la session après authentification réussie."""
+    if not role:
+        return
+    st.session_state.is_authenticated = True
+    st.session_state.current_user = email.strip().lower()
+    st.session_state.current_role = role
+    st.session_state.current_page = "chat"
+    st.session_state.chat_history = []
 
 
 def logout() -> None:
@@ -68,6 +67,9 @@ def logout() -> None:
 def render_login_screen() -> None:
     st.markdown("# Connexion")
     st.caption("Identifiez-vous pour accéder à l’agent diagnostic IA.")
+    st.caption(
+        "Comptes de démonstration uniquement — ne pas utiliser en production.",
+    )
 
     with st.form("login_form"):
         email_in = st.text_input("Email", placeholder="vous@entreprise.fr")
@@ -75,16 +77,16 @@ def render_login_screen() -> None:
         submit = st.form_submit_button("Connexion")
 
     if submit:
-        ok, role = authenticate_user(email_in, password_in)
+        ok, role = validate_login(email_in, password_in)
         if ok:
-            st.session_state.is_authenticated = True
-            st.session_state.current_user = email_in.strip().lower()
-            st.session_state.current_role = role
-            st.session_state.current_page = "chat"
-            st.session_state.chat_history = []
+            complete_login(email_in, role)
             st.rerun()
         else:
-            st.error("Email ou mot de passe incorrect.")
+            st.error(
+                "Identifiants incorrects. Vérifiez l’adresse e-mail et le mot de passe. "
+                "Pour la démo locale, les comptes par défaut sont configurés dans le fichier "
+                "`.env` (variables CLIENT_* et ADMIN_* — voir `.env.example`)."
+            )
 
 
 def render_user_sidebar() -> None:
