@@ -168,7 +168,7 @@ def render_admin_panel() -> None:
         st.caption(f"Diagnostics réalisés (session) : **{len(hist)}**")
         if not hist:
             st.caption("Dernier diagnostic : —")
-            st.caption("Score moyen (indice interne) : —")
+            st.caption("Indice moteur moyen (session) : —")
             return
         last = hist[-1]
         st.caption(
@@ -178,9 +178,19 @@ def render_admin_panel() -> None:
         scores = [float(e["score_global"]) for e in hist if e.get("score_global") is not None]
         if scores:
             avg = sum(scores) / len(scores)
-            st.caption(f"Score moyen (indice interne) : **{avg:.1f}**")
+            st.caption(f"Indice moteur moyen (session) : **{avg:.1f}**")
         else:
-            st.caption("Score moyen (indice interne) : —")
+            st.caption("Indice moteur moyen (session) : —")
+        nums_100 = [int(x) for x in (e.get("score_global_100") for e in hist) if x is not None]
+        if nums_100:
+            avg100 = round(sum(nums_100) / len(nums_100))
+            st.caption(f"Moyenne note /100 (session) : **{avg100}**")
+        with st.expander("Détails techniques (scoring)", expanded=False):
+            st.caption("Indice brut = moyenne des scores internes sur les 3 cas ; note /100 = indice × 5 (arrondi).")
+            if scores:
+                st.caption(f"Indice moyen calculé : **{sum(scores) / len(scores):.2f}**")
+            if nums_100:
+                st.caption(f"Note moyenne /100 : **{avg100}**")
 
 
 # --- Navigation & chat Ollama local ------------------------------------------
@@ -362,6 +372,39 @@ def raw_score_to_100(raw: float | None) -> int | None:
     return min(100, max(0, int(round(raw * 5))))
 
 
+def get_ai_potential_label(score_0_100: int | None) -> str:
+    """Libellé métier à partir de la note 0–100 (inchangé en interne)."""
+    if score_0_100 is None:
+        return "—"
+    s = int(score_0_100)
+    if s < 40:
+        return "Faible"
+    if s < 70:
+        return "Modéré"
+    return "Élevé"
+
+
+def get_ai_potential_explanation(score_0_100: int | None) -> str:
+    """Phrase courte pour dirigeant non technique, selon le potentiel IA."""
+    label = get_ai_potential_label(score_0_100)
+    if label == "—":
+        return "L’indicateur de potentiel n’a pas pu être calculé pour ce diagnostic."
+    if label == "Faible":
+        return (
+            "L’entreprise peut démarrer par des usages simples et peu risqués, "
+            "avant d’envisager des automatisations plus avancées."
+        )
+    if label == "Modéré":
+        return (
+            "L’entreprise dispose déjà de plusieurs opportunités concrètes "
+            "pour gagner du temps avec l’IA."
+        )
+    return (
+        "L’entreprise présente un fort potentiel d’automatisation et peut prioriser "
+        "rapidement plusieurs cas d’usage IA."
+    )
+
+
 def save_diagnostic_to_history(company: dict[str, Any], result: dict[str, Any]) -> None:
     """Ajoute un diagnostic à history (données figées, sans rappel LLM au rechargement)."""
     init_history()
@@ -462,11 +505,21 @@ def render_history_sidebar() -> None:
     ld = st.session_state.get("loaded_diagnostic")
     loaded_idx: int | None = ld.get("history_index") if isinstance(ld, dict) else None
 
+    is_admin = st.session_state.get("current_role") == "admin"
     for hist_idx in range(len(history) - 1, -1, -1):
         entry = history[hist_idx]
         name = str(entry.get("entreprise", "—"))
         s100 = entry.get("score_global_100")
-        score_label = f"Score {s100}/100" if s100 is not None else "Score —"
+        if s100 is None:
+            pot = "—"
+        else:
+            pot = get_ai_potential_label(int(s100))
+        if is_admin and s100 is not None:
+            score_label = f"Potentiel {pot} · {int(s100)}/100"
+        elif s100 is not None:
+            score_label = f"Potentiel IA : {pot}"
+        else:
+            score_label = "Potentiel IA : —"
         tsdisp = str(entry.get("ts_display") or "")
         date_short = tsdisp.split()[0] if tsdisp else ""
         line1 = f"{name} — {score_label}"
@@ -560,10 +613,14 @@ def render_diagnostic_form() -> tuple[bool, dict[str, Any] | None]:
 
 
 def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
-    """Cartes synthèse : score, priorité, ROI, action, 3 recommandations."""
+    """Cartes synthèse : potentiel IA (client) ou scores techniques (admin), ROI, recommandations."""
     recs = res.get("recommendations") or []
     gs = global_score_from_result(res)
+    s100 = raw_score_to_100(gs)
+    pot_label = get_ai_potential_label(s100)
+    pot_expl = get_ai_potential_explanation(s100)
     prio = priority_level_from_score(gs)
+    is_admin = st.session_state.get("current_role") == "admin"
 
     top = recs[0] if recs else {}
     roi_main = str(top.get("roi", "—")).strip() or "—"
@@ -586,19 +643,44 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
     else:
         st.info("Mode scoring déterministe.")
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        with st.container(border=True):
-            st.caption("Score global (indice interne)")
-            st.markdown(f"## {gs if gs is not None else '—'}")
-    with c2:
-        with st.container(border=True):
-            st.caption("Niveau de priorité")
-            st.markdown(f"## {prio}")
-    with c3:
-        with st.container(border=True):
-            st.caption("ROI estimé (1re reco.)")
-            st.markdown(f"### {roi_main}")
+    if is_admin:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            with st.container(border=True):
+                st.caption("Indice moteur (moyenne)")
+                st.markdown(f"## {gs if gs is not None else '—'}")
+        with c2:
+            with st.container(border=True):
+                st.caption("Niveau de priorité (interne)")
+                st.markdown(f"## {prio}")
+        with c3:
+            with st.container(border=True):
+                st.caption("Horizon ROI (1re reco.)")
+                st.markdown(f"### {roi_main}")
+        with st.expander("Détails techniques (note /100)", expanded=False):
+            st.caption(
+                f"Note indicative **{s100}/100** si disponible (même calcul que l’historique). "
+                "Non affichée aux comptes client."
+            )
+            if s100 is not None:
+                st.metric("Note /100", str(s100))
+            else:
+                st.caption("Note /100 : —")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.container(border=True):
+                st.metric("Potentiel IA", pot_label if pot_label != "—" else "—")
+                if pot_label == "Élevé":
+                    st.success(pot_expl)
+                elif pot_label in ("Faible", "Modéré"):
+                    st.info(pot_expl)
+                else:
+                    st.caption(pot_expl)
+        with c2:
+            with st.container(border=True):
+                st.caption("Horizon ROI (1re idée)")
+                st.markdown(f"### {roi_main}")
 
     exec_txt = res.get("executive_summary")
     if exec_txt and str(exec_txt).strip():
