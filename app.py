@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -481,6 +482,23 @@ def inject_minimal_styles() -> None:
             font-size: 0.8125rem !important;
             line-height: 1.25 !important;
         }
+        [data-testid="collapsedControl"] {
+            min-width: 7.5rem !important;
+            padding: 0.35rem 0.7rem !important;
+            border-radius: 0.5rem !important;
+            border: 1px solid #e5e7eb !important;
+            background: #ffffff !important;
+        }
+        [data-testid="collapsedControl"] svg {
+            display: none !important;
+        }
+        [data-testid="collapsedControl"]::after {
+            content: "☰ Menu";
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #374151;
+            line-height: 1.2;
+        }
         div[data-testid="stVerticalBlockBorderWrapper"] {
             background: #fdfdfd !important;
             border-color: #e8e8e8 !important;
@@ -656,7 +674,7 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
         with c3:
             with st.container(border=True):
                 st.caption("Horizon ROI (1re reco.)")
-                st.markdown(f"### {roi_main}")
+                st.markdown(f"## {roi_main}")
         with st.expander("Détails techniques (note /100)", expanded=False):
             st.caption(
                 f"Note indicative **{s100}/100** si disponible (même calcul que l’historique). "
@@ -719,6 +737,7 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
                 st.markdown(rec.get("summary", "") or "—")
             r1, r2, r3 = st.columns(3)
             ts = str(rec.get("time_saved", "—"))
+            ts = re.sub(r"h/semai(?:ne)?\.{0,3}", "h/sem.", ts, flags=re.IGNORECASE)
             if len(ts) > 42:
                 ts = ts[:39] + "…"
             r1.metric("Gain temps (estim.)", ts)
