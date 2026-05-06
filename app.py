@@ -169,7 +169,7 @@ def render_admin_panel() -> None:
         st.caption(f"Diagnostics réalisés (session) : **{len(hist)}**")
         if not hist:
             st.caption("Dernier diagnostic : —")
-            st.caption("Indice moteur moyen (session) : —")
+            st.caption("Potentiel IA estimé moyen (session) : —")
             return
         last = hist[-1]
         st.caption(
@@ -177,21 +177,19 @@ def render_admin_panel() -> None:
             f"({last.get('ts_display', '—')})"
         )
         scores = [float(e["score_global"]) for e in hist if e.get("score_global") is not None]
-        if scores:
-            avg = sum(scores) / len(scores)
-            st.caption(f"Indice moteur moyen (session) : **{avg:.1f}**")
-        else:
-            st.caption("Indice moteur moyen (session) : —")
         nums_100 = [int(x) for x in (e.get("score_global_100") for e in hist) if x is not None]
         if nums_100:
             avg100 = round(sum(nums_100) / len(nums_100))
-            st.caption(f"Moyenne note /100 (session) : **{avg100}**")
+            st.caption(f"Potentiel IA estimé moyen (session) : **{avg100}/100**")
+        else:
+            st.caption("Potentiel IA estimé moyen (session) : —")
         with st.expander("Détails techniques (scoring)", expanded=False):
-            st.caption("Indice brut = moyenne des scores internes sur les 3 cas ; note /100 = indice × 5 (arrondi).")
-            if scores:
-                st.caption(f"Indice moyen calculé : **{sum(scores) / len(scores):.2f}**")
+            st.caption(
+                "Potentiel IA estimé calculé à partir des scores internes sur les 3 cas "
+                "(projection sur /100)."
+            )
             if nums_100:
-                st.caption(f"Note moyenne /100 : **{avg100}**")
+                st.caption(f"Potentiel IA estimé moyen : **{avg100}/100**")
 
 
 # --- Navigation & chat Ollama local ------------------------------------------
@@ -662,28 +660,24 @@ def render_results_cards(company: dict[str, Any], res: dict[str, Any]) -> None:
         st.info("Mode scoring déterministe.")
 
     if is_admin:
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
-            with st.container(border=True):
-                st.caption("Indice moteur (moyenne)")
-                st.markdown(f"## {gs if gs is not None else '—'}")
-        with c2:
             with st.container(border=True):
                 st.caption("Niveau de priorité (interne)")
                 st.markdown(f"## {prio}")
-        with c3:
+        with c2:
             with st.container(border=True):
                 st.caption("Horizon ROI (1re reco.)")
                 st.markdown(f"## {roi_main}")
-        with st.expander("Détails techniques (note /100)", expanded=False):
+        with st.expander("Détails techniques (potentiel IA estimé)", expanded=False):
             st.caption(
-                f"Note indicative **{s100}/100** si disponible (même calcul que l’historique). "
-                "Non affichée aux comptes client."
+                "Potentiel IA estimé à partir des réponses au diagnostic. "
+                "Cette note sert à prioriser les recommandations."
             )
             if s100 is not None:
-                st.metric("Note /100", str(s100))
+                st.metric("Potentiel IA estimé", f"{s100}/100")
             else:
-                st.caption("Note /100 : —")
+                st.caption("Potentiel IA estimé : —")
     else:
         c1, c2 = st.columns(2)
         with c1:
