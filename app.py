@@ -134,31 +134,6 @@ def render_navigation_sidebar() -> None:
     st.divider()
 
 
-def render_top_navigation_menu() -> None:
-    """Menu principal visible dans la page (alternative au bouton natif de sidebar)."""
-    page = st.session_state.get("current_page", "chat")
-    with st.popover("☰ Menu", use_container_width=False):
-        st.caption("Navigation")
-        if st.button(
-            "💬 Assistant IA local",
-            use_container_width=True,
-            type="primary" if page == "chat" else "secondary",
-            key="nav_top_chat",
-        ):
-            st.session_state.current_page = "chat"
-            st.rerun()
-        if st.button(
-            "📋 Diagnostic IA entreprise",
-            use_container_width=True,
-            type="primary" if page == "diagnostic" else "secondary",
-            key="nav_top_diagnostic",
-        ):
-            st.session_state.current_page = "diagnostic"
-            st.rerun()
-        active = "Assistant IA local" if page == "chat" else "Diagnostic IA entreprise"
-        st.caption(f"📍 Page active : **{active}**")
-
-
 def render_configuration_sidebar() -> None:
     """Réglages LLM affichés dans la section Configuration."""
     st.markdown("#### Configuration")
@@ -505,11 +480,22 @@ def inject_minimal_styles() -> None:
             font-size: 0.8125rem !important;
             line-height: 1.25 !important;
         }
-        /* Masque strictement le toggle natif Streamlit ("<<" / ">>") */
-        header [data-testid="collapsedControl"],
-        [data-testid="collapsedControl"],
-        header button[kind="header"] {
+        [data-testid="collapsedControl"] {
+            min-width: 7.5rem !important;
+            padding: 0.35rem 0.7rem !important;
+            border-radius: 0.5rem !important;
+            border: 1px solid #e5e7eb !important;
+            background: #ffffff !important;
+        }
+        [data-testid="collapsedControl"] svg {
             display: none !important;
+        }
+        [data-testid="collapsedControl"]::after {
+            content: "☰ Menu";
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #374151;
+            line-height: 1.2;
         }
         div[data-testid="stVerticalBlockBorderWrapper"] {
             background: #fdfdfd !important;
@@ -862,12 +848,11 @@ if not st.session_state.is_authenticated:
 
 with st.sidebar:
     render_user_sidebar()
+    render_navigation_sidebar()
     render_configuration_sidebar()
     if st.session_state.current_page == "diagnostic":
         render_history_sidebar()
         render_admin_panel()
-
-render_top_navigation_menu()
 
 if st.session_state.current_page == "chat":
     render_chat_page()
