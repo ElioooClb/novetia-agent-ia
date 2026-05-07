@@ -51,7 +51,8 @@ novetia-agent-ia/
 1. L’utilisateur remplit le **formulaire diagnostic** (ou discute dans le **chat**).
 2. Le **scoring** classe les cas d’usage à partir de `data/use_cases_ai.json`.
 3. Un **appel LLM** enrichit les trois premiers cas (selon `LLM_PROVIDER`).
-4. **`report.py`** assemble le **Markdown** puis le **PDF**.
+4. Le moteur de scoring déterministe garantit un fonctionnement cohérent même si le LLM est indisponible.
+5. `report.py` assemble le Markdown puis le PDF.
 
 ---
 
@@ -60,6 +61,7 @@ novetia-agent-ia/
 ### Prérequis
 
 - Python **3.10+** recommandé  
+- Testé sous **Python 3.11** et **Debian 12**
 - Un compte / clé si vous utilisez **OpenAI** ou **Mistral** ; **Ollama** pour un mode entièrement local  
 
 ### Étapes
@@ -81,6 +83,58 @@ streamlit run app.py
 ```
 
 Ouvrir l’URL affichée dans le terminal (souvent `http://localhost:8501`).
+
+---
+
+## Déploiement serveur (Debian / OVH)
+
+Le projet peut également être déployé sur un serveur Linux distant afin de proposer une démonstration accessible en réseau.
+
+### Exemple de déploiement
+
+```bash
+git clone https://github.com/ElioooClb/novetia-agent-ia.git
+cd novetia-agent-ia
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### Lancement Streamlit
+
+```bash
+streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+### Exécution comme service systemd
+
+Le projet peut être exécuté comme service Linux afin d’assurer :
+
+* le redémarrage automatique
+* la persistance après reboot
+* une supervision simplifiée
+
+Exemple :
+
+```bash
+sudo systemctl start novetia
+sudo systemctl status novetia
+```
+
+### Infrastructure utilisée
+
+Le serveur Debian OVH héberge :
+
+* l’application Streamlit
+* le modèle Ollama local
+* les exports de rapports
+
+Le diagnostic peut fonctionner :
+
+* soit entièrement en local via Ollama
+* soit via des APIs cloud (OpenAI / Mistral)
 
 ---
 
@@ -132,7 +186,9 @@ Les secrets et URLs ne doivent **pas** être codés en dur : tout passe par **`.
 
 - RAG / embeddings sur documentation interne  
 - Persistance des diagnostics et multi-utilisateurs  
-- Tests automatisés sur `scoring` et parsing JSON  
+- Multi-agents
+- Connexion CRM/ERP
+- Dasboard analytics
 
 ---
 
