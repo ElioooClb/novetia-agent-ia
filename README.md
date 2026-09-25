@@ -1,5 +1,7 @@
 # NovetIA — Diagnostic IA TPE/PME
 
+> **PROJET ABANDONNÉ le 25/09/2026.** Dépôt conservé en archive, aucune évolution prévue. Contexte et décision dans le vault jarvis-shared : `20-decisions/2026-09-25-agent-ia-abandon.md`.
+
 Application **Streamlit** de démonstration : aide les dirigeants de petites structures à **prioriser des usages de l’IA** adaptés à leur contexte, avec un parcours structuré (formulaire → scoring → enrichissement LLM → rapport).
 
 ---
